@@ -21,7 +21,7 @@ contract PrestamoDefi {
     struct Cliente {
         bool activado;
         uint256 saldoGarantia;
-        mapping(uint256 => prestamo) prestamos;
+        mapping(uint256 => Prestamo) prestamos;
         uint256[] prestamoIds;
     }
 
@@ -38,16 +38,16 @@ contract PrestamoDefi {
 
     
     modifier soloSocioPrincipal() {
-    require(msg.sender == socioPrincipalAddress, "Solo el socio principal puede realizar esta operacion");
+    require(msg.sender == socioPrincipal, "Solo el socio principal puede realizar esta operacion");
     _;
 }
     
     modifier soloEmpleadoPrestamista() {
-        require(empleadosPrestamista[msg.sender], "Solo los prestamistas pueden realizar esta operacion");
+    require(empleadosPrestamista[msg.sender], "Solo los prestamistas pueden realizar esta operacion");
         _;
     }
     modifier soloClienteRegistrado() {
-        require(clientes[msg.sender].activado, "Cliente no registrado o inactivo");
+    require(clientes[msg.sender].activado, "Cliente no registrado o inactivo");
         _;
     }
 
@@ -71,15 +71,14 @@ contract PrestamoDefi {
 
     function depositarGarantia() external payable soloClienteRegistrado {
         clientes[msg.sender].saldoGarantia += msg.value;
-        emit SolicitudPrestamo(msg.sender, msg.value, 0, block.timestamp);
     }
 
 
     function solicitarPrestamo(uint256 monto_, uint256 plazo_) public soloClienteRegistrado returns (uint256) {
        require(clientes[msg.sender].saldoGarantia >= monto_, "Saldo de garantia insuficiente");
        uint256 nuevoId = clientes[msg.sender].prestamoIds.length + 1;
+    
     Prestamo storage nuevoPrestamo = clientes[msg.sender].prestamos[nuevoId];
-
     nuevoPrestamo.id = nuevoId;
     nuevoPrestamo.prestatario = msg.sender;
     nuevoPrestamo.monto = monto_;
@@ -92,8 +91,10 @@ contract PrestamoDefi {
 
     
     clientes[msg.sender].prestamoIds.push(nuevoId);
-        emit SolicitudPrestamo(msg.sender, monto_, plazo_);
-        return nuevoId;
+    
+    emit SolicitudPrestamo(msg.sender, monto_, plazo_);
+    
+    return nuevoId;
 }
 
 
@@ -112,17 +113,14 @@ contract PrestamoDefi {
     function reembolsarPrestamo(uint256 id_) public soloClienteRegistrado {
     Cliente storage prestatario = clientes[msg.sender];
     require(id_ > 0 && id_ <= prestatario.prestamoIds.length, "ID de prestamo no valido");
-    Prestamo storage Prestamo = prestatario.prestamos[id_];
+    Prestamo storage prestamo = prestatario.prestamos[id_];
     require(prestamo.prestatario == msg.sender, "El prestamo no pertenece al prestatario actual");
     require(prestamo.aprobado, "El prestamo no esta aprobado");
     require(!prestamo.reembolsado, "El prestamo ya esta reembolsado");
     require(!prestamo.liquidado, "El prestamo ya esta liquidado");
     require(prestamo.tiempoLimite >= block.timestamp, "El tiempo limite del prestamo ha vencido");
-
     
-    address payable socioPrincipal = socioPrincipalAddress;  
-    require(address(this).balance >= prestamo.monto, "Saldo insuficiente en el contrato");
-    socioPrincipal.transfer(prestamo.monto);
+    socioPrincipal.transfer(prestamo.monto);  
     prestamo.reembolsado = true;
     prestatario.saldoGarantia -= prestamo.monto;
     emit PrestamoReembolsado(id_, msg.sender, prestamo.monto);
@@ -144,7 +142,7 @@ contract PrestamoDefi {
     require(!prestamo.liquidado, "El prestamo ya fue liquidado");
     require(block.timestamp > prestamo.tiempoLimite, "El tiempo limite no ha vencido");
 
-    socioPrincipalAddress.transfer(prestamo.monto);
+    soloSocioPrincipal.transfer(prestamo.monto);
 
     prestamo.liquidado = true;
     prestatario.saldoGarantia -= prestamo.monto;
