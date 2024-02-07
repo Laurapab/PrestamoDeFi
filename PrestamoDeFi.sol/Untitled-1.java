@@ -31,6 +31,8 @@ contract PrestamoDefi {
     event PrestamoAprobado(address prestatario, uint256 monto, uint256 id);
     event PrestamoReembolsado(address prestatario, uint256 monto, uint256 id);
     event GarantiaLiquidada(address prestatario, uint256 idPrestamo, uint256 montoLiquidado);
+    event EtherRecibido(address sender, uint256 value);
+
     
     modifier soloSocioPrincipal() {
         require(msg.sender == socioPrincipal, "Solo el socio principal puede realizar esta operacion");
@@ -152,4 +154,8 @@ contract PrestamoDefi {
         Prestamo memory detallePrestamo = clientes[prestatario_].prestamos[id_];
         return detallePrestamo;
     }   
+
+    receive() external payable {
+        emit EtherRecibido(msg.sender, msg.value);
+        }
 }
