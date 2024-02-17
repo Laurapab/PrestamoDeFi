@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-
-contract PrestamoDefi {
-    address payable public socioPrincipal;
+contract PrestamoDeFi {
+    address public socioPrincipal;
 
     struct Prestamo {
         uint256 id;
@@ -27,135 +26,154 @@ contract PrestamoDefi {
     mapping(address => Cliente) public clientes;
     mapping(address => bool) public empleadosPrestamista;
 
-    event SolicitudPrestamo(address prestatario, uint256 monto, uint256 plazo, uint256 tiempoSolicitud);
-    event PrestamoAprobado(address prestatario, uint256 monto, uint256 id);
-    event PrestamoReembolsado(address prestatario, uint256 monto, uint256 id);
-    event GarantiaLiquidada(address prestatario, uint256 idPrestamo, uint256 montoLiquidado);
-    event EtherRecibido(address sender, uint256 value);
+    event SolicitudPrestamo(address indexed prestatario, uint256 monto, uint256 plazo);
+    event PrestamoAprobado(address indexed prestatario, uint256 monto);
+    event PrestamoReembolsado(address indexed prestatario, uint256 monto);
+    event GarantiaLiquidada(address indexed prestatario, uint256 monto);
 
-    
+
     modifier soloSocioPrincipal() {
-        require(msg.sender == socioPrincipal, "Solo el socio principal puede realizar esta operacion");
+        require(msg.sender == socioPrincipal, "No estas autorizado para realizar esta operacion");
         _;
     }
-    
+
     modifier soloEmpleadoPrestamista() {
-        require(empleadosPrestamista[msg.sender], "Solo los prestamistas pueden realizar esta operacion");
-            _;
+        require(empleadosPrestamista[msg.sender], "No tienes el rol de prestamista");
+        _;
     }
+
     modifier soloClienteRegistrado() {
-        require(clientes[msg.sender].activado, "Cliente no registrado o inactivo");
-            _;
+        require(clientes[msg.sender].activado, "No estas registrado como cliente");
+        _;
     }
 
     constructor() {
-        socioPrincipal = payable(msg.sender);  
+        socioPrincipal = msg.sender;
         empleadosPrestamista[socioPrincipal] = true;
     }
 
-    function altaPrestamista(address nuevoPrestamista) public soloSocioPrincipal {
-        require(!empleadosPrestamista[nuevoPrestamista], "El prestamista ya esta dado de alta.");
+    function altaPrestamista(
+        address nuevoPrestamista
+    ) public soloSocioPrincipal {
+        require(!empleadosPrestamista[nuevoPrestamista], "El prestamista ya esta dado de alta");
         empleadosPrestamista[nuevoPrestamista] = true;
     }
 
-    function altaCliente(address nuevoCliente) public soloEmpleadoPrestamista {
-        require(!clientes[nuevoCliente].activado, "El cliente ya esta dado de alta.");
+    function altaCliente(
+        address nuevoCliente
+    ) public soloEmpleadoPrestamista {
+        require(!clientes[nuevoCliente].activado, "El cliente ya esta registrado");
+
         Cliente storage structNuevoCliente = clientes[nuevoCliente];
         structNuevoCliente.saldoGarantia = 0;
         structNuevoCliente.activado = true;
     }
 
-    function depositarGarantia() external payable soloClienteRegistrado {
+    function depositarGarantia() public payable soloClienteRegistrado {
         clientes[msg.sender].saldoGarantia += msg.value;
     }
 
-    function solicitarPrestamo(uint256 monto_, uint256 plazo_) public soloClienteRegistrado returns (uint256) {
+    function solicitarPrestamo(
+        uint256 monto_,
+        uint256 plazo_
+    ) public soloClienteRegistrado returns(uint256) {
         require(clientes[msg.sender].saldoGarantia >= monto_, "Saldo de garantia insuficiente");
+        
         uint256 nuevoId = clientes[msg.sender].prestamoIds.length + 1;
-    
+
         Prestamo storage nuevoPrestamo = clientes[msg.sender].prestamos[nuevoId];
         nuevoPrestamo.id = nuevoId;
         nuevoPrestamo.prestatario = msg.sender;
         nuevoPrestamo.monto = monto_;
         nuevoPrestamo.plazo = plazo_;
         nuevoPrestamo.tiempoSolicitud = block.timestamp;
-        nuevoPrestamo.tiempoLimite = 0; 
+        nuevoPrestamo.tiempoLimite = 0;
         nuevoPrestamo.aprobado = false;
         nuevoPrestamo.reembolsado = false;
         nuevoPrestamo.liquidado = false;
-        
+
         clientes[msg.sender].prestamoIds.push(nuevoId);
-        
-        emit SolicitudPrestamo(msg.sender, monto_, plazo_, nuevoPrestamo.tiempoSolicitud);
-        
+
+        emit SolicitudPrestamo(msg.sender, monto_, plazo_);
+
         return nuevoId;
     }
 
-
-    function aprobarPrestamo(address prestatario_, uint256 id_) public soloEmpleadoPrestamista {
+    function aprobarPrestamo(
+        address prestatario_,
+        uint256 id_
+    ) public soloEmpleadoPrestamista {
         Cliente storage prestatario = clientes[prestatario_];
 
         require(id_ > 0 && id_ <= prestatario.prestamoIds.length, "ID de prestamo no valido");
-
+        
         Prestamo storage prestamo = prestatario.prestamos[id_];
 
         require(!prestamo.aprobado, "El prestamo ya esta aprobado");
-        require(!prestamo.reembolsado, "El prestamo ya esta reembolsado");
-        require(!prestamo.liquidado, "El prestamo ya esta liquidado");
+        require(!prestamo.reembolsado, "El prestamo ya ha sido reembolsado");
+        require(!prestamo.liquidado, "El prestamo ya ha sido liquidado");
 
         prestamo.aprobado = true;
         prestamo.tiempoLimite = block.timestamp + prestamo.plazo;
-        emit PrestamoAprobado(prestatario_, prestamo.monto, id_);
+
+        emit PrestamoAprobado(prestatario_, prestamo.monto);
     }
 
-    function reembolsarPrestamo(uint256 id_) public soloClienteRegistrado {
+    function reembolsarPrestamo(
+        uint256 id_
+    ) public soloClienteRegistrado {
         Cliente storage prestatario = clientes[msg.sender];
-
         require(id_ > 0 && id_ <= prestatario.prestamoIds.length, "ID de prestamo no valido");
-
+        
         Prestamo storage prestamo = prestatario.prestamos[id_];
 
-        require(prestamo.prestatario == msg.sender, "El prestamo no pertenece al prestatario actual");
+        require(msg.sender == prestamo.prestatario, "No estas autorizado para reembolsar este prestamo");
         require(prestamo.aprobado, "El prestamo no esta aprobado");
-        require(!prestamo.reembolsado, "El prestamo ya esta reembolsado");
-        require(!prestamo.liquidado, "El prestamo ya esta liquidado");
-        require(prestamo.tiempoLimite >= block.timestamp, "El tiempo limite del prestamo ha vencido");
-        
-        socioPrincipal.transfer(prestamo.monto);  
+        require(!prestamo.reembolsado, "El prestamo ya ha sido reembolsado");
+        require(!prestamo.liquidado, "El prestamo ha sido liquidado");
+        require(block.timestamp <= prestamo.tiempoLimite, "Tiempo de pago expirado");
+
+        payable(socioPrincipal).transfer(prestamo.monto);
+
         prestamo.reembolsado = true;
+
         prestatario.saldoGarantia -= prestamo.monto;
-        emit PrestamoReembolsado(msg.sender, prestamo.monto, id_);
+
+        emit PrestamoReembolsado(msg.sender, prestamo.monto);
     }
 
-    function liquidarPrestamo(address prestatario_, uint256 id_) public soloEmpleadoPrestamista {
+    function liquidarGarantia(
+        address prestatario_,
+        uint256 id_
+    ) public soloEmpleadoPrestamista {
         Cliente storage prestatario = clientes[prestatario_];
-        Prestamo storage prestamo = prestatario.prestamos[id_];
+        require(id_ > 0 && id_ <= prestatario.prestamoIds.length, "ID de prestamo no valido");
         
-        require(prestamo.aprobado, "El prestamo no esta aprobado");
-        require(!prestamo.reembolsado, "El prestamo ya fue reembolsado");
-        require(!prestamo.liquidado, "El prestamo ya fue liquidado");
-        require(block.timestamp > prestamo.tiempoLimite, "El tiempo limite no ha vencido");
+        Prestamo storage prestamo = prestatario.prestamos[id_];
 
-        socioPrincipal.transfer(prestamo.monto);
+        require(prestamo.aprobado, "El prestamo no esta aprobado");
+        require(!prestamo.reembolsado, "El prestamo ya ha sido reembolsado");
+        require(!prestamo.liquidado, "El prestamo ya ha sido liquidado");
+        require(block.timestamp > prestamo.tiempoLimite, "Tiempo de pago no ha expirado");
+
+        payable(socioPrincipal).transfer(prestamo.monto);
 
         prestamo.liquidado = true;
         prestatario.saldoGarantia -= prestamo.monto;
 
-        emit GarantiaLiquidada(prestatario_, id_, prestamo.monto);
+        emit GarantiaLiquidada(prestatario_, prestamo.monto);
     }
 
-    
-    function obtenerPrestamosPorPrestatario(address prestatario_) public view returns (uint256[] memory) {
+    function obtenerPrestamosPorPrestatario(
+        address prestatario_
+    ) public view returns(uint256[] memory) {
         return clientes[prestatario_].prestamoIds;
     }
 
-
-    function obtenerDetallesPrestamo(address prestatario_, uint256 id_) public view returns (Prestamo memory) {
-        Prestamo memory detallePrestamo = clientes[prestatario_].prestamos[id_];
-        return detallePrestamo;
-    }   
-
-    receive() external payable {
-        emit EtherRecibido(msg.sender, msg.value);
-        }
+    function obtenerDetalleDePrestamo(
+        address prestatario_,
+        uint256 id_
+    ) public view returns(Prestamo memory) {
+        return clientes[prestatario_].prestamos[id_];
+    }
 }
